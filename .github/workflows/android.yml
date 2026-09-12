@@ -23,26 +23,26 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Make Gradlew Executable
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
           fi
 
-      - name: Build Debug APK
+      - name: Build Android APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
-      - name: Find and List Generated APKs
+      - name: Locate Generated APKs
         run: |
-          echo "=== Built APK Artifacts ==="
-          find app/build/outputs/apk/ -name "*.apk" -ls || true
+          mkdir -p output_apk
+          find app/build/outputs/apk -name "*.apk" -exec cp {} output_apk/ \;
+          echo "Found APK files:"
+          ls -la output_apk/
 
-      - name: Upload Debug APK Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Kalame-Pich-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: output_apk/*.apk
           if-no-files-found: error
+

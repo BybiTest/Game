@@ -16,7 +16,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = java.net.URI("https://mvn.tapsell.ir/artifactory/tapsell-sdk-mvn") }
         maven { url = java.net.URI("https://jitpack.io") }
     }
 }

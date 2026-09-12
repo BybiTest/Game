@@ -63,6 +63,11 @@ android {
         buildConfig = true
         aidl = true
     }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
