@@ -11,11 +11,8 @@ import com.example.data.LevelProgressEntity
 import com.example.data.UserEntity
 import com.example.data.WordLevel
 import com.example.monetization.BazaarBillingManager
-import com.example.monetization.BazaarPurchaseResult
-import com.example.monetization.PaymentResult
 import com.example.monetization.RewardedAdListener
 import com.example.monetization.TapsellAdManager
-import com.example.monetization.ZarinPalPaymentManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -84,12 +81,16 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
                 Log.e(TAG, "Database init error", e)
             }
         }
+
         initWordLevel(0)
         initCrosswordLevel(0)
     }
 
     fun initWordLevel(index: Int) {
-        val level = GameLevelsData.wordLevels.getOrNull(index) ?: GameLevelsData.wordLevels.first()
+        val level = GameLevelsData.wordLevels
+            .getOrNull(index)
+            ?: GameLevelsData.wordLevels.first()
+
         _wordState.value = WordGameState(
             currentLevelIndex = index,
             shuffledLetters = level.letters.shuffled(),
@@ -102,12 +103,15 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     }
 
     val currentWordLevel: WordLevel
-        get() = GameLevelsData.wordLevels.getOrElse(_wordState.value.currentLevelIndex) {
+        get() = GameLevelsData.wordLevels.getOrElse(
+            _wordState.value.currentLevelIndex
+        ) {
             GameLevelsData.wordLevels.first()
         }
 
     fun selectLetter(char: Char) {
         val current = _wordState.value.selectedLetters
+
         _wordState.value = _wordState.value.copy(
             selectedLetters = current + char,
             feedbackMessage = null
@@ -116,6 +120,7 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
 
     fun removeLastLetter() {
         val current = _wordState.value.selectedLetters
+
         if (current.isNotEmpty()) {
             _wordState.value = _wordState.value.copy(
                 selectedLetters = current.dropLast(1),
@@ -140,7 +145,10 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     fun submitWord() {
         val word = _wordState.value.selectedLetters.joinToString("")
         val level = currentWordLevel
-        if (word.isEmpty()) return
+
+        if (word.isEmpty()) {
+            return
+        }
 
         when {
             _wordState.value.foundWords.contains(word) -> {
@@ -149,9 +157,12 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
                     feedbackMessage = "این کلمه قبلاً پیدا شده!"
                 )
             }
+
             level.targetWords.contains(word) -> {
                 val updatedFound = _wordState.value.foundWords + word
-                val isCompleted = updatedFound.containsAll(level.targetWords)
+                val isCompleted =
+                    updatedFound.containsAll(level.targetWords)
+
                 _wordState.value = _wordState.value.copy(
                     selectedLetters = emptyList(),
                     foundWords = updatedFound,
@@ -159,12 +170,15 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
                     isLevelCompleted = isCompleted,
                     showWinDialog = isCompleted
                 )
+
                 if (isCompleted) {
                     _showConfetti.value = true
+
                     viewModelScope.launch {
                         repository.addCoins(level.coinReward)
                         repository.addXp(25)
                         repository.incrementLevelsCompleted()
+
                         repository.saveProgress(
                             LevelProgressEntity(
                                 levelId = level.id,
@@ -177,6 +191,7 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
                     }
                 }
             }
+
             else -> {
                 _wordState.value = _wordState.value.copy(
                     selectedLetters = emptyList(),
@@ -187,54 +202,86 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     }
 
     fun nextWordLevel() {
-        val nextIndex = (_wordState.value.currentLevelIndex + 1) % GameLevelsData.wordLevels.size
+        val nextIndex =
+            (_wordState.value.currentLevelIndex + 1) %
+                    GameLevelsData.wordLevels.size
+
         initWordLevel(nextIndex)
     }
 
     fun dismissWinDialog() {
-        _wordState.value = _wordState.value.copy(showWinDialog = false)
+        _wordState.value =
+            _wordState.value.copy(showWinDialog = false)
+
         _showConfetti.value = false
     }
 
-    // Crossword
+    // ==========================================
+    // CROSSWORD
+    // ==========================================
+
     fun initCrosswordLevel(index: Int) {
-        val level = GameLevelsData.crosswordLevels.getOrNull(index) ?: GameLevelsData.crosswordLevels.first()
+        val level = GameLevelsData.crosswordLevels
+            .getOrNull(index)
+            ?: GameLevelsData.crosswordLevels.first()
+
         _crosswordState.value = CrosswordGameState(
             currentLevelIndex = index,
             enteredGrid = emptyMap(),
-            selectedCell = level.cells.firstOrNull()?.let { it.row to it.col },
+            selectedCell = level.cells.firstOrNull()
+                ?.let { it.row to it.col },
             isCompleted = false,
             showWinDialog = false
         )
     }
 
     val currentCrosswordLevel: CrosswordLevel
-        get() = GameLevelsData.crosswordLevels.getOrElse(_crosswordState.value.currentLevelIndex) {
+        get() = GameLevelsData.crosswordLevels.getOrElse(
+            _crosswordState.value.currentLevelIndex
+        ) {
             GameLevelsData.crosswordLevels.first()
         }
 
     fun selectCrosswordCell(row: Int, col: Int) {
         val level = currentCrosswordLevel
-        if (level.cells.any { it.row == row && it.col == col }) {
-            _crosswordState.value = _crosswordState.value.copy(selectedCell = row to col)
+
+        if (level.cells.any {
+                it.row == row && it.col == col
+            }) {
+            _crosswordState.value =
+                _crosswordState.value.copy(
+                    selectedCell = row to col
+                )
         }
     }
 
     fun inputCrosswordChar(char: Char) {
-        val cell = _crosswordState.value.selectedCell ?: return
-        val currentGrid = _crosswordState.value.enteredGrid.toMutableMap()
-        currentGrid[cell] = char
-        val level = currentCrosswordLevel
-        val allCorrect = level.cells.all { c -> currentGrid[c.row to c.col] == c.correctChar }
+        val cell = _crosswordState.value.selectedCell
+            ?: return
 
-        _crosswordState.value = _crosswordState.value.copy(
-            enteredGrid = currentGrid,
-            isCompleted = allCorrect,
-            showWinDialog = allCorrect
-        )
+        val currentGrid =
+            _crosswordState.value.enteredGrid.toMutableMap()
+
+        currentGrid[cell] = char
+
+        val level = currentCrosswordLevel
+
+        val allCorrect = level.cells.all { crosswordCell ->
+            currentGrid[
+                crosswordCell.row to crosswordCell.col
+            ] == crosswordCell.correctChar
+        }
+
+        _crosswordState.value =
+            _crosswordState.value.copy(
+                enteredGrid = currentGrid,
+                isCompleted = allCorrect,
+                showWinDialog = allCorrect
+            )
 
         if (allCorrect) {
             _showConfetti.value = true
+
             viewModelScope.launch {
                 repository.addCoins(level.coinReward)
                 repository.addXp(30)
@@ -244,23 +291,41 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     }
 
     fun clearCrosswordCell() {
-        val cell = _crosswordState.value.selectedCell ?: return
-        val currentGrid = _crosswordState.value.enteredGrid.toMutableMap()
+        val cell = _crosswordState.value.selectedCell
+            ?: return
+
+        val currentGrid =
+            _crosswordState.value.enteredGrid.toMutableMap()
+
         currentGrid.remove(cell)
-        _crosswordState.value = _crosswordState.value.copy(enteredGrid = currentGrid)
+
+        _crosswordState.value =
+            _crosswordState.value.copy(
+                enteredGrid = currentGrid
+            )
     }
 
     fun nextCrosswordLevel() {
-        val nextIndex = (_crosswordState.value.currentLevelIndex + 1) % GameLevelsData.crosswordLevels.size
+        val nextIndex =
+            (_crosswordState.value.currentLevelIndex + 1) %
+                    GameLevelsData.crosswordLevels.size
+
         initCrosswordLevel(nextIndex)
     }
 
     fun dismissCrosswordWinDialog() {
-        _crosswordState.value = _crosswordState.value.copy(showWinDialog = false)
+        _crosswordState.value =
+            _crosswordState.value.copy(
+                showWinDialog = false
+            )
+
         _showConfetti.value = false
     }
 
+    // ==========================================
     // REAL TAPSELL REWARDED VIDEO
+    // ==========================================
+
     fun watchTapsellRewardedAd(activity: Activity) {
         _adStatus.value = AdStatusState(
             isWatching = true,
@@ -271,11 +336,13 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
             activity = activity,
             zoneId = tapsellAdManager.getRewardedZoneId(),
             listener = object : RewardedAdListener {
+
                 override fun onAdLoaded() {
                     _adStatus.value = AdStatusState(
                         isWatching = true,
                         statusMessage = "تبلیغ آماده شد. در حال نمایش..."
                     )
+
                     tapsellAdManager.showRewardedVideo(
                         activity = activity,
                         zoneId = tapsellAdManager.getRewardedZoneId(),
@@ -284,7 +351,11 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
                 }
 
                 override fun onAdFailedToLoad(error: String) {
-                    Log.e(TAG, "Tapsell rewarded failed to load: $error")
+                    Log.e(
+                        TAG,
+                        "Tapsell rewarded failed to load: $error"
+                    )
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
                         statusMessage = "",
@@ -295,28 +366,42 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
                 override fun onAdOpened() {
                     _adStatus.value = AdStatusState(
                         isWatching = true,
-                        statusMessage = "در حال پخش تبلیغ جایزه‌ای تپسل..."
+                        statusMessage =
+                            "در حال پخش تبلیغ جایزه‌ای تپسل..."
                     )
                 }
 
                 override fun onRewardEarned(rewardAmount: Int) {
-                    Log.i(TAG, "User completed Tapsell rewarded video! Awarding coins.")
+                    Log.i(
+                        TAG,
+                        "User completed Tapsell rewarded video! Awarding coins."
+                    )
+
                     viewModelScope.launch {
                         repository.recordAdWatched(REWARD_COINS)
                         _showConfetti.value = true
                     }
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
-                        statusMessage = "پاداش $REWARD_COINS سکه با موفقیت دریافت شد!"
+                        statusMessage =
+                            "پاداش $REWARD_COINS سکه با موفقیت دریافت شد!"
                     )
                 }
 
-                override fun onAdClosed(rewardCompleted: Boolean) {
-                    _adStatus.value = AdStatusState(isWatching = false)
+                override fun onAdClosed(
+                    rewardCompleted: Boolean
+                ) {
+                    _adStatus.value =
+                        AdStatusState(isWatching = false)
                 }
 
                 override fun onAdShowFailed(error: String) {
-                    Log.e(TAG, "Tapsell show failed: $error")
+                    Log.e(
+                        TAG,
+                        "Tapsell show failed: $error"
+                    )
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
                         error = "خطا در نمایش ویدیو: $error"
@@ -327,30 +412,41 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     }
 
     fun dismissAdStatus() {
-        _adStatus.value = AdStatusState(isWatching = false)
+        _adStatus.value =
+            AdStatusState(isWatching = false)
     }
 
     // ==========================================
-    // 1. CAFE BAZAAR IN-APP BILLING METHODS
+    // CAFE BAZAAR IN-APP BILLING
     // ==========================================
-    val bazaarBillingManager = BazaarBillingManager.getInstance()
 
-    fun buyBazaarSku(activity: Activity, sku: String, isSubscription: Boolean = false) {
+    val bazaarBillingManager =
+        BazaarBillingManager.getInstance()
+
+    fun buyBazaarSku(
+        activity: Activity,
+        sku: String,
+        isSubscription: Boolean = false
+    ) {
         _adStatus.value = AdStatusState(
             isWatching = true,
-            statusMessage = "در حال اتصال به پرداخت درون‌برنامه‌ای کافه‌بازار..."
+            statusMessage =
+                "در حال اتصال به پرداخت درون‌برنامه‌ای کافه‌بازار..."
         )
 
-        val launched = bazaarBillingManager.launchPurchase(
-            activity = activity,
-            sku = sku,
-            isSubscription = isSubscription
-        )
+        val launched =
+            bazaarBillingManager.launchPurchase(
+                activity = activity,
+                sku = sku,
+                isSubscription = isSubscription
+            )
 
         if (!launched) {
             _adStatus.value = AdStatusState(
                 isWatching = false,
-                error = "کافه‌بازار بر روی دستگاه شما اجرا نشد. لطفاً نصب بودن کافه‌بازار را بررسی کنید."
+                error =
+                    "کافه‌بازار بر روی دستگاه شما اجرا نشد. " +
+                    "لطفاً نصب بودن کافه‌بازار را بررسی کنید."
             )
         }
     }
@@ -363,55 +459,92 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     ) {
         viewModelScope.launch {
             when (sku) {
+
                 BazaarBillingManager.SKU_VIP_MONTHLY -> {
-                    repository.activateVip("اشتراک ۱ ماهه بازار")
+                    repository.activateVip(
+                        "اشتراک ۱ ماهه بازار"
+                    )
+
                     repository.addCoins(100)
+
                     _showConfetti.value = true
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
-                        statusMessage = "اشتراک ۱ ماهه VIP کافه‌بازار با موفقیت فعال شد!"
+                        statusMessage =
+                            "اشتراک ۱ ماهه VIP کافه‌بازار با موفقیت فعال شد!"
                     )
                 }
+
                 BazaarBillingManager.SKU_VIP_SEASONAL -> {
-                    repository.activateVip("اشتراک ۳ ماهه بازار")
+                    repository.activateVip(
+                        "اشتراک ۳ ماهه بازار"
+                    )
+
                     repository.addCoins(300)
+
                     _showConfetti.value = true
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
-                        statusMessage = "اشتراک ۳ ماهه VIP کافه‌بازار با موفقیت فعال شد!"
+                        statusMessage =
+                            "اشتراک ۳ ماهه VIP کافه‌بازار با موفقیت فعال شد!"
                     )
                 }
+
                 BazaarBillingManager.SKU_VIP_LIFETIME -> {
-                    repository.activateVip("اشتراک دائمی بازار")
+                    repository.activateVip(
+                        "اشتراک دائمی بازار"
+                    )
+
                     repository.addCoins(1000)
+
                     _showConfetti.value = true
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
-                        statusMessage = "اشتراک طلایی دائمی VIP کافه‌بازار فعال شد!"
+                        statusMessage =
+                            "اشتراک طلایی دائمی VIP کافه‌بازار فعال شد!"
                     )
                 }
+
                 BazaarBillingManager.SKU_COINS_PACK_500 -> {
                     repository.addCoins(500)
+
                     _showConfetti.value = true
-                    bazaarBillingManager.consumePurchase(activity.applicationContext, purchaseToken)
+
+                    bazaarBillingManager.consumePurchase(
+                        activity.applicationContext,
+                        purchaseToken
+                    )
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
-                        statusMessage = "۵۰۰ سکه طلایی با موفقیت به حسابتان اضافه شد!"
+                        statusMessage =
+                            "۵۰۰ سکه طلایی با موفقیت به حسابتان اضافه شد!"
                     )
                 }
+
                 else -> {
-                    repository.activateVip("VIP کافه‌بازار")
+                    repository.activateVip(
+                        "VIP کافه‌بازار"
+                    )
+
                     _showConfetti.value = true
+
                     _adStatus.value = AdStatusState(
                         isWatching = false,
-                        statusMessage = "خرید شما با موفقیت ثبت و فعال شد!"
+                        statusMessage =
+                            "خرید شما با موفقیت ثبت و فعال شد!"
                     )
                 }
             }
         }
     }
 
-    fun onBazaarPurchaseError(errorMessage: String) {
+    fun onBazaarPurchaseError(
+        errorMessage: String
+    ) {
         _adStatus.value = AdStatusState(
             isWatching = false,
             error = errorMessage
@@ -419,40 +552,64 @@ class GameViewModel(private val repository: GameRepository) : ViewModel() {
     }
 
     // ==========================================
-    // 2. REAL ZARINPAL SHAPARAK PAYMENT FLOW
+    // VIP PURCHASE ENTRY POINT
     // ==========================================
-    val zarinPalManager = ZarinPalPaymentManager.getInstance()
+    //
+    // ZarinPalPaymentManager و PaymentResult
+    // در پروژه ZIP وجود ندارند.
+    //
+    // بنابراین این متد، API قبلی MainActivity را حفظ
+    // می‌کند اما خرید VIP را از طریق سیستم واقعی
+    // پرداخت درون‌برنامه‌ای کافه‌بازار موجود در پروژه
+    // انجام می‌دهد.
+    //
 
-    fun startVipPurchase(activity: Activity, planTitle: String, amountTomans: Int) {
-        _adStatus.value = AdStatusState(
-            isWatching = true,
-            statusMessage = "در حال اتصال به درگاه پرداخت شاپرک..."
-        )
+    fun startVipPurchase(
+        activity: Activity,
+        planTitle: String,
+        amountTomans: Int
+    ) {
+        val normalizedTitle =
+            planTitle.lowercase()
 
-        viewModelScope.launch {
-            val result = zarinPalManager.requestPayment(
-                context = activity,
-                amountTomans = amountTomans,
-                planTitle = planTitle
-            )
+        val sku = when {
 
-            when (result) {
-                is PaymentResult.RedirectToGateway -> {
-                    _adStatus.value = AdStatusState(isWatching = false)
-                    zarinPalManager.openGatewayUrl(activity, result.paymentUrl)
-                }
-                is PaymentResult.Failure -> {
-                    _adStatus.value = AdStatusState(
-                        isWatching = false,
-                        error = result.errorMessage
-                    )
-                }
-                is PaymentResult.Success -> {
-                    repository.activateVip(result.planName)
-                    repository.addCoins(200)
-                    _showConfetti.value = true
-                }
+            normalizedTitle.contains("ماه") &&
+                    !normalizedTitle.contains("۳") &&
+                    !normalizedTitle.contains("3") -> {
+                BazaarBillingManager.SKU_VIP_MONTHLY
+            }
+
+            normalizedTitle.contains("فصل") ||
+                    normalizedTitle.contains("۳ ماه") ||
+                    normalizedTitle.contains("3 ماه") -> {
+                BazaarBillingManager.SKU_VIP_SEASONAL
+            }
+
+            normalizedTitle.contains("دائم") ||
+                    normalizedTitle.contains("همیش") ||
+                    normalizedTitle.contains("lifetime") -> {
+                BazaarBillingManager.SKU_VIP_LIFETIME
+            }
+
+            else -> {
+                BazaarBillingManager.SKU_VIP_MONTHLY
             }
         }
+
+        Log.d(
+            TAG,
+            "VIP purchase requested: " +
+                    "plan=$planTitle, " +
+                    "amount=$amountTomans, " +
+                    "sku=$sku"
+        )
+
+        buyBazaarSku(
+            activity = activity,
+            sku = sku,
+            isSubscription =
+                sku != BazaarBillingManager.SKU_VIP_LIFETIME
+        )
     }
 }
